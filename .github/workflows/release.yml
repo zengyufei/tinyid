@@ -110,4 +110,4 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./tinyid-server/target/tinyid-server-${{ steps.tagName.outputs.tag }}.jar
           asset_name: tinyid-server-${{ steps.tagName.outputs.tag }}.jar
-          tag: ${{ steps.tagName.outputs.tag }}
+          tag: releases/${{ steps.tagName.outputs.tag }}
