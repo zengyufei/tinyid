@@ -7,38 +7,49 @@ on:
   push:
     tags:
       - releases/[0-9]+.[0-9]+.[0-9]+
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      # Checkout 代码
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      # 设置 JDK 1.8
       - name: Set up JDK 1.8
         uses: actions/setup-java@v1
         with:
           java-version: 1.8
-      - uses: olegtarasov/get-tag@v2.1.4
-        id: tagName
+
+      # 使用 olegtarasov/get-tag 获取纯净的标签版本号
+      - name: Get Tag Name
+        uses: olegtarasov/get-tag@v2.1.4
+        id: tagName # outputs.tag 将是 0.0.1
         with:
-          tagRegex: "releases/(.*)"  # Optional. Returns specified group text as tag name. Full tag string is returned if regex is not defined.
-          tagRegexGroup: 1 # Optional. Default is 1.
+          tagRegex: "releases/(.*)"
+          tagRegexGroup: 1
 
-      - name: Set version
-        run: |
-          mvn versions:set -DnewVersion=${{ steps.tagName.outputs.tag }}
+      # 设置 Maven 项目版本
+      - name: Set Maven Project Version
+        run: mvn versions:set -DnewVersion=${{ steps.tagName.outputs.tag }}
 
+      # 构建 Maven 项目
       - name: Build with Maven
         run: mvn -B package --file pom.xml
 
-      - name: Check and Get Release Info
-        id: get_release_info # 修改ID，更贴合其功能
+      # 检查 Release 是否已存在并获取其信息
+      - name: Check if Release Exists
+        id: get_release_info
         uses: actions/github-script@v6
         env:
-          TAG_NAME_TO_CHECK: ${{ github.ref }}
+          # `tag` 参数需要纯净的标签名，所以我们使用 olegtarasov/get-tag 的输出
+          TAG_NAME_TO_CHECK: ${{ steps.tagName.outputs.tag }}
         with:
           script: |
             try {
               const { repo, owner } = context.repo;
-              const tag = process.env.TAG_NAME_TO_CHECK.replace('refs/tags/', '');
+              const tag = process.env.TAG_NAME_TO_CHECK;
               console.log(`Checking for Release with tag: ${tag}`);
               const response = await github.rest.repos.getReleaseByTag({
                 owner,
@@ -47,26 +58,26 @@ jobs:
               });
               console.log(`Release for tag ${tag} already exists. ID: ${response.data.id}`);
               core.setOutput('release_exists', 'true');
-              core.setOutput('upload_url', response.data.upload_url); // 获取已存在Release的上传URL
+              // 这里我们不再需要 upload_url，因为 svenstaro/upload-release-action 不使用它
             } catch (error) {
               if (error.status === 404) {
-                console.log(`No Release found for tag ${process.env.TAG_NAME_TO_CHECK}.`);
+                console.log(`No Release found for tag ${tag}.`);
                 core.setOutput('release_exists', 'false');
-                core.setOutput('upload_url', ''); // 如果不存在，则upload_url为空
               } else {
                 console.error(`Error checking release: ${error.message}`);
-                throw error; // 对于其他错误，仍然抛出
+                throw error;
               }
             }
 
-      - name: Create Release (if not exists)
+      # 如果 Release 不存在，则创建 Release
+      - name: Create Release (if not already exists)
         id: create_release
-        if: steps.get_release_info.outputs.release_exists == 'false' # 仅在Release不存在时创建
+        if: steps.get_release_info.outputs.release_exists == 'false'
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
+          tag_name: ${{ github.ref }} # 创建 Release 需要完整的 Git 引用
           release_name: Release ${{ steps.tagName.outputs.tag }}
           body: |
             Changes in this Release
@@ -74,39 +85,23 @@ jobs:
           draft: false
           prerelease: false
 
-      # 决定最终的上传URL：如果新建了Release则用新建的URL，否则用查询到的URL
-      - name: Set Upload URL
-        id: set_upload_url
-        run: |
-          # 如果create_release步骤执行了，它的upload_url才会有值
-          UPLOAD_URL="${{ steps.create_release.outputs.upload_url }}"
-          # 如果create_release没有执行，但get_release_info找到了已存在的Release，则使用它的upload_url
-          if [ -z "$UPLOAD_URL" ]; then
-            UPLOAD_URL="${{ steps.get_release_info.outputs.upload_url }}"
-          fi
-          echo "Final upload URL: $UPLOAD_URL"
-          echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT # 使用$GITHUB_OUTPUT设置步骤输出
-
-  
-      - name: Upload TinyId client Release Asset
-        id: upload-release-client-asset
-        # 只有当upload_url非空时才执行上传
-        if: steps.set_upload_url.outputs.upload_url != ''
+      # 上传 TinyId 客户端 Release 资产
+      # 该 Action 内部可能产生 set-output 警告，但根据您的要求不改变其版本。
+      # 它通过 'tag' 参数关联 Release，而不是 'upload_url'。
+      - name: Upload TinyId Client Release Asset
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./tinyid-client/target/tinyid-client-${{ steps.tagName.outputs.tag }}.jar
           asset_name: tinyid-client-${{ steps.tagName.outputs.tag }}.jar
-          tag: releases/${{ steps.tagName.outputs.tag }}
+          tag: releases/${{ steps.tagName.outputs.tag }} # 使用纯净的标签名来关联 Release
 
-  
-      - name: Upload TinyId server Release Asset
-        id: upload-release-server-asset
-        # 只有当upload_url非空时才执行上传
-        if: steps.set_upload_url.outputs.upload_url != ''
+      # 上传 TinyId 服务器 Release 资产
+      # 同样，该 Action 内部可能产生 set-output 警告，但根据您的要求不改变其版本。
+      - name: Upload TinyId Server Release Asset
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./tinyid-server/target/tinyid-server-${{ steps.tagName.outputs.tag }}.jar
           asset_name: tinyid-server-${{ steps.tagName.outputs.tag }}.jar
-          tag: releases/${{ steps.tagName.outputs.tag }}
+          tag: releases/${{ steps.tagName.outputs.tag }} # 使用纯净的标签名来关联 Release
