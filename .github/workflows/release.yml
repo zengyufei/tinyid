@@ -87,18 +87,17 @@ jobs:
           echo "Final upload URL: $UPLOAD_URL"
           echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT # 使用$GITHUB_OUTPUT设置步骤输出
 
+  
       - name: Upload TinyId client Release Asset
         id: upload-release-client-asset
         # 只有当upload_url非空时才执行上传
         if: steps.set_upload_url.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: svenstaro/upload-release-action@v2
         with:
-          upload_url: ${{ steps.set_upload_url.outputs.upload_url }}
-          asset_path: ./tinyid-client/target/tinyid-client-${{ steps.tagName.outputs.tag }}.jar
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./tinyid-client/target/tinyid-client-${{ steps.tagName.outputs.tag }}.jar
           asset_name: tinyid-client-${{ steps.tagName.outputs.tag }}.jar
-          asset_content_type: application/zip
+          tag: releases/${{ steps.tagName.outputs.tag }}
 
   
       - name: Upload TinyId server Release Asset
