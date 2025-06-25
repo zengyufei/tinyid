@@ -21,13 +21,49 @@ jobs:
         with:
           tagRegex: "releases/(.*)"  # Optional. Returns specified group text as tag name. Full tag string is returned if regex is not defined.
           tagRegexGroup: 1 # Optional. Default is 1.
+
+      - name: Check if Release Already Exists
+        id: check_release
+        uses: actions/github-script@v6 # 使用 github-script 执行 API 查询
+        env:
+          TAG_NAME_TO_CHECK: ${{ github.ref }} # 使用完整的引用名称，例如 'refs/tags/releases/0.0.1'
+        with:
+          script: |
+            try {
+              const { repo, owner } = context.repo;
+              // 尝试获取与当前标签对应的 Release
+              const response = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag: process.env.TAG_NAME_TO_CHECK.replace('refs/tags/', ''), // API需要纯标签名，所以需要移除 'refs/tags/'
+              });
+              console.log(`Release for tag ${process.env.TAG_NAME_TO_CHECK} already exists.`);
+              core.setOutput('release_exists', 'true');
+            } catch (error) {
+              if (error.status === 404) {
+                console.log(`No Release found for tag ${process.env.TAG_NAME_TO_CHECK}.`);
+                core.setOutput('release_exists', 'false');
+              } else {
+                // 对于其他错误，重新抛出
+                throw error;
+              }
+            }
+
       - name: Set version
+        # 仅当 Release 不存在时才执行此步骤
+        if: steps.check_release.outputs.release_exists == 'false'
         run: |
           mvn versions:set -DnewVersion=${{ steps.tagName.outputs.tag }}
+
       - name: Build with Maven
+        # 仅当 Release 不存在时才执行此步骤
+        if: steps.check_release.outputs.release_exists == 'false'
         run: mvn -B package --file pom.xml
+
       - name: Create Release
         id: create_release
+        # 仅当 Release 不存在时才执行此步骤
+        if: steps.check_release.outputs.release_exists == 'false'
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
@@ -39,23 +75,29 @@ jobs:
             - test release
           draft: false
           prerelease: false
+
       - name: Upload TinyId client Release Asset
         id: upload-release-client-asset
+        # 仅当 Release 成功创建时才执行此步骤
+        if: steps.create_release.outputs.upload_url != ''
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./tinyid-client/target/tinyid-client-${{ steps.tagName.outputs.tag }}.jar
           asset_name: tinyid-client-${{ steps.tagName.outputs.tag }}.jar
           asset_content_type: application/zip
+
       - name: Upload TinyId server Release Asset
         id: upload-release-server-asset
+        # 仅当 Release 成功创建时才执行此步骤
+        if: steps.create_release.outputs.upload_url != ''
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./tinyid-server/target/tinyid-server-${{ steps.tagName.outputs.tag }}.jar
           asset_name: tinyid-server-${{ steps.tagName.outputs.tag }}.jar
           asset_content_type: application/zip
