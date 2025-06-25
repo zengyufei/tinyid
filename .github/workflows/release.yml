@@ -50,14 +50,10 @@ jobs:
             }
 
       - name: Set version
-        # 仅当 Release 不存在时才执行此步骤
-        if: steps.check_release.outputs.release_exists == 'false'
         run: |
           mvn versions:set -DnewVersion=${{ steps.tagName.outputs.tag }}
 
       - name: Build with Maven
-        # 仅当 Release 不存在时才执行此步骤
-        if: steps.check_release.outputs.release_exists == 'false'
         run: mvn -B package --file pom.xml
 
       - name: Create Release
