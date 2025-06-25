@@ -16,7 +16,7 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: 1.8
-      - uses: olegtarasov/get-tag@v2
+      - uses: olegtarasov/get-tag@v2.1.4
         id: tagName
         with:
           tagRegex: "releases/(.*)"  # Optional. Returns specified group text as tag name. Full tag string is returned if regex is not defined.
