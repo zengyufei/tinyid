@@ -11,16 +11,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # 更新到 v4
+      - uses: actions/checkout@v2
       - name: Set up JDK 1.8
-        uses: actions/setup-java@v4 # 更新到 v4
+        uses: actions/setup-java@v1
         with:
           java-version: 1.8
-      - uses: olegtarasov/get-tag@v2.1.4 # 请检查此Action是否有更高版本
+      - uses: olegtarasov/get-tag@v2.1.4
         id: tagName
         with:
-          tagRegex: "releases/(.*)"
-          tagRegexGroup: 1
+          tagRegex: "releases/(.*)"  # Optional. Returns specified group text as tag name. Full tag string is returned if regex is not defined.
+          tagRegexGroup: 1 # Optional. Default is 1.
 
       - name: Set version
         run: |
@@ -30,7 +30,7 @@ jobs:
         run: mvn -B package --file pom.xml
 
       - name: Check and Get Release Info
-        id: get_release_info
+        id: get_release_info # 修改ID，更贴合其功能
         uses: actions/github-script@v6
         env:
           TAG_NAME_TO_CHECK: ${{ github.ref }}
@@ -47,22 +47,22 @@ jobs:
               });
               console.log(`Release for tag ${tag} already exists. ID: ${response.data.id}`);
               core.setOutput('release_exists', 'true');
-              core.setOutput('upload_url', response.data.upload_url);
+              core.setOutput('upload_url', response.data.upload_url); // 获取已存在Release的上传URL
             } catch (error) {
               if (error.status === 404) {
                 console.log(`No Release found for tag ${process.env.TAG_NAME_TO_CHECK}.`);
                 core.setOutput('release_exists', 'false');
-                core.setOutput('upload_url', '');
+                core.setOutput('upload_url', ''); // 如果不存在，则upload_url为空
               } else {
                 console.error(`Error checking release: ${error.message}`);
-                throw error;
+                throw error; // 对于其他错误，仍然抛出
               }
             }
 
       - name: Create Release (if not exists)
         id: create_release
-        if: steps.get_release_info.outputs.release_exists == 'false'
-        uses: actions/create-release@v1.1.5 # 更新到推荐的最新 v1 版本
+        if: steps.get_release_info.outputs.release_exists == 'false' # 仅在Release不存在时创建
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -74,20 +74,24 @@ jobs:
           draft: false
           prerelease: false
 
+      # 决定最终的上传URL：如果新建了Release则用新建的URL，否则用查询到的URL
       - name: Set Upload URL
         id: set_upload_url
         run: |
+          # 如果create_release步骤执行了，它的upload_url才会有值
           UPLOAD_URL="${{ steps.create_release.outputs.upload_url }}"
+          # 如果create_release没有执行，但get_release_info找到了已存在的Release，则使用它的upload_url
           if [ -z "$UPLOAD_URL" ]; then
             UPLOAD_URL="${{ steps.get_release_info.outputs.upload_url }}"
           fi
           echo "Final upload URL: $UPLOAD_URL"
-          echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT # 这是新语法，不会触发警告
+          echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT # 使用$GITHUB_OUTPUT设置步骤输出
 
       - name: Upload TinyId client Release Asset
         id: upload-release-client-asset
+        # 只有当upload_url非空时才执行上传
         if: steps.set_upload_url.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1.0.2 # 更新到推荐的最新 v1 版本
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -96,14 +100,14 @@ jobs:
           asset_name: tinyid-client-${{ steps.tagName.outputs.tag }}.jar
           asset_content_type: application/zip
 
+  
       - name: Upload TinyId server Release Asset
         id: upload-release-server-asset
+        # 只有当upload_url非空时才执行上传
         if: steps.set_upload_url.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1.0.2 # 更新到推荐的最新 v1 版本
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: svenstaro/upload-release-action@v2
         with:
-          upload_url: ${{ steps.set_upload_url.outputs.upload_url }}
-          asset_path: ./tinyid-server/target/tinyid-server-${{ steps.tagName.outputs.tag }}.jar
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./tinyid-server/target/tinyid-server-${{ steps.tagName.outputs.tag }}.jar
           asset_name: tinyid-server-${{ steps.tagName.outputs.tag }}.jar
-          asset_content_type: application/zip
+          tag: ${{ steps.tagName.outputs.tag }}
